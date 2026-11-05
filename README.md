@@ -7,7 +7,8 @@ A DeepSeek Harness plugin that shows your DeepSeek account balance (the same fig
 ## 功能
 
 - 显示充值余额；有赠金余额时附加 `· 赠金 ¥x.xx`
-- 登录后自动读取，每 60 秒以及窗口重新获得焦点时刷新；点击余额立即刷新
+- 点击余额弹出详情卡片：充值余额、赠金余额、本月消费（按模型分列）、最近的充值记录和赠金记录，并可跳转开放平台的用量页和充值页
+- 登录后自动读取余额，每 60 秒以及窗口重新获得焦点时刷新
 - 金额格式与设置页一致（保留两位小数、千分位、不足一分显示 `<¥0.01`）
 - 样式与内置统计信息一致，跟随主题和界面语言（中文、英文、日文）
 - 未登录 DeepSeek 账号时显示「未登录」；仅使用 API Key、没有账号功能时不显示
@@ -40,11 +41,16 @@ A DeepSeek Harness plugin that shows your DeepSeek account balance (the same fig
 - 通过 `remote.account.getBalance` 读取钱包余额，与内置账号设置页调用的是同一个接口
 - 渲染到 `conversation.composer.dock` 插槽（内置统计信息所在的位置），不修改 Harness 源码
 
-Host 半部分（[index.js](index.js)）为空。
+Host 半部分（[index.js](index.js)）注册一个本地路由 `GET /api/balance-display.details`。它用已登录账号的凭证调用开放平台网页自己使用的接口：
+
+- `/api/v0/usage/by_api_key/cost`：本月消费
+- `/auth-api/v0/users/get_all_invoice`：充值和赠金记录
+
+凭证只在 Host 进程内使用，不会发给浏览器。**这两个接口没有公开文档，开放平台改版后可能失效**；失效时详情卡片会显示「读取失败」，余额本身不受影响。
 
 ## English
 
-Install by asking the Harness agent to run `plugin_manager` `install_bundle` with the absolute path of this directory, then refresh the page. The balance appears in the stats row under the composer, shows the topped-up balance plus any granted balance, refreshes every 60 seconds and on window focus, and can be refreshed by clicking it.
+Install by asking the Harness agent to run `plugin_manager` `install_bundle` with the absolute path of this directory, then refresh the page. The balance appears in the stats row under the composer and refreshes every 60 seconds and on window focus. Clicking it opens a card with the topped-up and granted balances, this month's spending by model, and recent top-ups and grants. The Host half reads those from undocumented DeepSeek Platform endpoints with the signed-in grant, which never leaves the Host process; they may break when Platform changes.
 
 ## License
 
