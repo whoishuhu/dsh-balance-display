@@ -157,16 +157,12 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'dshbal-section' }, h('span', null, children), aside ? h('span', { className: 'dshbal-aside' }, aside) : null);
     }
 
-    function DetailsPanel({ state, details, t, lang, links, onRefresh }) {
-      const balance = state.balance?.status === 'ready' ? state.balance : null;
-      const bonus = balance ? balance.bonusWallets.filter((w) => !isZeroAmount(w.balance)) : [];
+    function DetailsPanel({ details, t, lang, links, onRefresh }) {
       const channelName = (c) => (CHANNELS[lang] ?? CHANNELS.en)[c] ?? c ?? '';
       const statusText = (s) => (s && s !== 'SUCCESS' ? t('status_' + s) : null);
+      const failure = (section) => h('div', { className: 'dshbal-note', title: section.detail || section.code || undefined },
+        t('sectionFailed') + (section.code ? `（${section.code}${section.detail ? '：' + section.detail.replace(/^[a-z-]+: ?/, '') : ''}）` : ''));
       const body = [];
-
-      body.push(h('dl', { key: 'bal', className: 'dshbal-details' },
-        h(Row, { label: t('topUpBalance'), value: balance ? joinMoney(balance.wallets.length ? balance.wallets : [{ currency: 'CNY', balance: '0' }]) : t('unavailableShort') }),
-        h(Row, { label: t('bonusBalance'), value: balance ? (bonus.length ? joinMoney(bonus) : formatBalance('0', '¥')) : t('unavailableShort') })));
 
       if (details.status === 'loading' || details.status === 'idle') {
         body.push(h('div', { key: 'loading', className: 'dshbal-note' }, t('detailsLoading')));
@@ -190,7 +186,7 @@ window.__ModuleLoader__.load({
           else body.push(h('div', { key: 'sn', className: 'dshbal-note' }, t('noSpending')));
         } else {
           body.push(h(SectionTitle, { key: 'st' }, t('spendingMonth')));
-          body.push(h('div', { key: 'sf', className: 'dshbal-note' }, t('sectionFailed')));
+          body.push(h('div', { key: 'sf' }, failure(spending)));
         }
         // Recharge history
         if (recharges.status === 'ready') {
@@ -215,7 +211,7 @@ window.__ModuleLoader__.load({
           }
         } else {
           body.push(h(SectionTitle, { key: 'rt' }, t('recharges')));
-          body.push(h('div', { key: 'rf', className: 'dshbal-note' }, t('sectionFailed')));
+          body.push(h('div', { key: 'rf' }, failure(recharges)));
         }
       }
 
@@ -331,6 +327,7 @@ button.dshbal-pill:focus-visible,.dshbal-link:focus-visible{outline:2px solid va
 .dshbal-details dd{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .dshbal-sub{display:block;color:var(--dsw-alias-label-tertiary);opacity:.8;font-size:11px;line-height:16px}
 .dshbal-section{color:var(--dsw-alias-label-primary);font-weight:500;justify-content:space-between;gap:16px;margin:14px 0 6px;padding-top:10px;border-top:.5px solid var(--dsw-alias-border-l2);display:flex}
+.dshbal-rule+.dshbal-section{margin-top:0;padding-top:0;border-top:0}
 .dshbal-aside{font-variant-numeric:tabular-nums;font-weight:500}
 .dshbal-note{color:var(--dsw-alias-label-tertiary)}
 .dshbal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:10px;border-top:.5px solid var(--dsw-alias-border-l2)}

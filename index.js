@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Host half of the balance display plugin.
  *
  * Serves GET /api/balance-display.details for the Client half. The route reads
@@ -32,7 +32,16 @@ async function platformGet(session, path, query, signal) {
     response = await fetch(url, {
       method: 'GET',
       redirect: 'error',
-      headers: { ...session.requestHeaders, 'x-dsh-auth-token': session.token, accept: 'application/json' },
+      headers: {
+        ...session.requestHeaders,
+        'x-dsh-auth-token': session.token,
+        accept: 'application/json',
+        // Client identity headers the Platform web app sends with every call.
+        'x-client-platform': 'web',
+        'x-client-version': '1.0.1',
+        'x-client-locale': 'zh_CN',
+        'x-client-timezone-offset': String(session.tzSec ?? 0),
+      },
       signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
   } catch (error) {
@@ -49,8 +58,8 @@ async function platformGet(session, path, query, signal) {
     throw new PlatformError('protocol', 'json');
   }
   if (payload?.code === 40003) throw new PlatformError('unauthorized', '40003');
-  if (payload?.code !== 0) throw new PlatformError('protocol', `code ${payload?.code}`);
-  if (payload.data?.biz_code !== 0) throw new PlatformError('protocol', `biz_code ${payload.data?.biz_code}`);
+  if (payload?.code !== 0) throw new PlatformError('protocol', `code ${payload?.code} ${typeof payload?.msg === 'string' ? payload.msg.slice(0, 80) : ''}`.trim());
+  if (payload.data?.biz_code !== 0) throw new PlatformError('protocol', `biz_code ${payload.data?.biz_code} ${typeof payload.data?.biz_msg === 'string' ? payload.data.biz_msg.slice(0, 80) : ''}`.trim());
   return payload.data.biz_data;
 }
 
@@ -84,9 +93,12 @@ function monthStart(nowMs, tzSec) {
 
 /** Sum the month's per-model and per-tool costs for each currency. */
 async function readSpending(session, tzSec, signal) {
+  // Same range as Platform's "this month" preset: day boundaries in the caller's zone,
+  // from the 1st through the end of today (end is the next local midnight).
   const now = Date.now();
   const start = monthStart(now, tzSec);
-  const end = Math.floor(now / 1000);
+  const local = new Date(now + tzSec * 1000);
+  const end = Math.floor(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1) / 1000) - tzSec;
   // Platform expects a whole-hour tz and folds any remainder into start/end (see its web app).
   const hourTz = 3600 * Math.floor(tzSec / 3600);
   const rest = tzSec - hourTz;
@@ -159,7 +171,7 @@ async function section(read) {
   } catch (error) {
     const code = error instanceof PlatformError ? error.code : 'error';
     console.error('[balance-display] platform read failed', { code, message: error?.message });
-    return { status: 'failed', code };
+    return { status: 'failed', code, detail: error instanceof PlatformError ? error.message : undefined };
   }
 }
 
@@ -181,6 +193,7 @@ export function apply(ctx) {
         return json({ status: 'failed' }, 502);
       }
       if (session === null) return json({ status: 'signed-out' });
+      session = { ...session, tzSec };
       const [spending, recharges] = await Promise.all([
         section(() => readSpending(session, tzSec, request.signal)),
         section(() => readRecharges(session, request.signal)),
