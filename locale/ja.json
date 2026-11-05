@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "title": "残高表示",
+    "description": "メインインターフェースの右下にアカウント残高を表示"
+  },
+  "balance": "残高",
+  "loading": "読み込み中...",
+  "notSignedIn": "ログインしていません",
+  "unavailable": "利用不可"
+}

@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "title": "Balance display",
+    "description": "Display account balance in the bottom-right corner of the main interface"
+  },
+  "balance": "Balance",
+  "loading": "Loading...",
+  "notSignedIn": "Not signed in",
+  "unavailable": "Unavailable"
+}

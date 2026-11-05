@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "title": "余额显示",
+    "description": "在主界面右下角显示账户余额信息"
+  },
+  "balance": "余额",
+  "loading": "加载中...",
+  "notSignedIn": "未登录",
+  "unavailable": "无法获取"
+}
