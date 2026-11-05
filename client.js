@@ -1,4 +1,4 @@
-﻿window.__ModuleLoader__.load({
+window.__ModuleLoader__.load({
   id: '@local/dsh-balance-display',
   factory(require) {
     const React = require('react');
@@ -15,7 +15,7 @@
       zh: {
         balance: '余额', bonus: '赠金', loading: '余额加载中', notSignedIn: '未登录', unavailable: '余额获取失败',
         openDetails: '查看消费和充值详情', detailsTitle: '账户余额', topUpBalance: '充值余额', bonusBalance: '赠金余额',
-        unavailableShort: '获取失败', detailsLoading: '正在读取消费和充值记录…', detailsFailed: '读取消费和充值记录失败，可前往开放平台查看。',
+        unavailableShort: '获取失败', detailsLoading: '正在读取消费和充值记录…', detailsFailed: '读取消费和充值记录失败，可前往开放平台查看。', detailsRestart: '消费和充值详情需要重启 DeepSeek Harness 后才能使用。',
         sectionFailed: '读取失败', spendingMonth: '本月消费', toolCalls: '工具调用', otherModels: '其他', noSpending: '本月暂无消费',
         recharges: '充值记录', bonuses: '赠金记录', noRecharges: '暂无充值记录', count: '共 {0} 笔', expires: '到期',
         refreshShort: '刷新', openUsage: '用量详情', topUp: '充值',
@@ -24,7 +24,7 @@
       en: {
         balance: 'Balance', bonus: 'granted', loading: 'Loading balance', notSignedIn: 'Not signed in', unavailable: 'Balance unavailable',
         openDetails: 'View spending and top-ups', detailsTitle: 'Account balance', topUpBalance: 'Topped-up balance', bonusBalance: 'Granted balance',
-        unavailableShort: 'Unavailable', detailsLoading: 'Loading spending and top-ups…', detailsFailed: 'Could not load spending and top-ups. You can view them on Platform.',
+        unavailableShort: 'Unavailable', detailsLoading: 'Loading spending and top-ups…', detailsFailed: 'Could not load spending and top-ups. You can view them on Platform.', detailsRestart: 'Restart DeepSeek Harness to enable spending and top-up details.',
         sectionFailed: 'Could not load', spendingMonth: 'Spent this month', toolCalls: 'Tool calls', otherModels: 'Other', noSpending: 'No spending this month',
         recharges: 'Top-ups', bonuses: 'Grants', noRecharges: 'No top-ups yet', count: '{0} total', expires: 'expires',
         refreshShort: 'Refresh', openUsage: 'Usage details', topUp: 'Top up',
@@ -33,7 +33,7 @@
       ja: {
         balance: '残高', bonus: '付与', loading: '残高を読込中', notSignedIn: '未ログイン', unavailable: '残高を取得できません',
         openDetails: '利用額とチャージ履歴を表示', detailsTitle: 'アカウント残高', topUpBalance: 'チャージ残高', bonusBalance: '付与残高',
-        unavailableShort: '取得失敗', detailsLoading: '利用額とチャージ履歴を読込中…', detailsFailed: '利用額とチャージ履歴を取得できませんでした。Platform で確認できます。',
+        unavailableShort: '取得失敗', detailsLoading: '利用額とチャージ履歴を読込中…', detailsFailed: '利用額とチャージ履歴を取得できませんでした。Platform で確認できます。', detailsRestart: '利用額とチャージ履歴を表示するには DeepSeek Harness を再起動してください。',
         sectionFailed: '取得失敗', spendingMonth: '今月の利用額', toolCalls: 'ツール呼び出し', otherModels: 'その他', noSpending: '今月の利用はありません',
         recharges: 'チャージ履歴', bonuses: '付与履歴', noRecharges: 'チャージ履歴はありません', count: '全 {0} 件', expires: '期限',
         refreshShort: '更新', openUsage: '利用状況', topUp: 'チャージ',
@@ -171,7 +171,7 @@
       if (details.status === 'loading' || details.status === 'idle') {
         body.push(h('div', { key: 'loading', className: 'dshbal-note' }, t('detailsLoading')));
       } else if (details.status !== 'ready') {
-        body.push(h('div', { key: 'err', className: 'dshbal-note' }, t('detailsFailed')));
+        body.push(h('div', { key: 'err', className: 'dshbal-note' }, t(details.reason === 'restart' ? 'detailsRestart' : 'detailsFailed')));
       } else {
         const { spending, recharges } = details.value;
         // Spending this month
@@ -456,9 +456,12 @@ button.dshbal-pill:focus-visible,.dshbal-link:focus-visible{outline:2px solid va
           try {
             const tz = -new Date().getTimezoneOffset() * 60;
             const response = await fetch(DETAILS_ROUTE + '?tz=' + tz, { headers: { accept: 'application/json' } });
-            if (!response.ok) return { status: 'failed' };
+            // 404: the Host half that serves this route has not loaded yet (it loads on app restart).
+            if (response.status === 404) return { status: 'failed', reason: 'restart' };
+            if (!response.ok) return { status: 'failed', reason: 'http' };
             const body = await response.json();
-            if (body?.status !== 'ready') return { status: 'failed' };
+            if (body?.status === 'signed-out') return { status: 'failed', reason: 'signed-out' };
+            if (body?.status !== 'ready') return { status: 'failed', reason: 'http' };
             return { status: 'ready', value: body };
           } catch (error) {
             console.error('[balance-display] details read failed', error);
