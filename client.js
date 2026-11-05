@@ -2,7 +2,7 @@ window.__ModuleLoader__.load({
   id: '@local/dsh-balance-display',
   factory(require) {
     const React = require('react');
-    const { useState, useEffect, useSyncExternalStore } = React;
+    const { useSyncExternalStore } = React;
     const h = React.createElement;
 
     /** Client build version the account Remote methods expect (matches the shipped account plugin). */
@@ -11,128 +11,111 @@ window.__ModuleLoader__.load({
     const REFRESH_MS = 60 * 1000;
 
     const STRINGS = {
-      zh: { balance: '余额', loading: '加载中', notSignedIn: '未登录', unavailable: '获取失败', refresh: '点击刷新', hide: '隐藏余额' },
-      en: { balance: 'Balance', loading: 'Loading', notSignedIn: 'Not signed in', unavailable: 'Unavailable', refresh: 'Click to refresh', hide: 'Hide balance' },
-      ja: { balance: '残高', loading: '読込中', notSignedIn: '未ログイン', unavailable: '取得失敗', refresh: 'クリックして更新', hide: '残高を隠す' },
+      zh: { balance: '余额', bonus: '赠金', loading: '余额加载中', notSignedIn: '未登录', unavailable: '余额获取失败', refresh: '点击刷新余额' },
+      en: { balance: 'Balance', bonus: 'granted', loading: 'Loading balance', notSignedIn: 'Not signed in', unavailable: 'Balance unavailable', refresh: 'Click to refresh balance' },
+      ja: { balance: '残高', bonus: '付与', loading: '残高を読込中', notSignedIn: '未ログイン', unavailable: '残高を取得できません', refresh: 'クリックして残高を更新' },
     };
 
-    /** Add thousands separators to the integer part of a fixed-point string. */
-    function addCommas(fixed) {
-      const [integer, fraction] = fixed.split('.');
-      return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + fraction;
+    /**
+     * Convert a decimal amount (string or number, optional exponent such as
+     * `0E-20` or `1.5e3`, the forms big.js accepts) into sign, integer digits
+     * and fraction digits without floating-point arithmetic.
+     */
+    function parseDecimal(amount) {
+      const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(String(amount).trim());
+      if (!match || (match[2] === '' && (match[3] ?? '') === '')) return null;
+      let digits = (match[2] || '') + (match[3] || '');
+      let point = (match[2] || '').length + Number(match[4] || 0);
+      if (point < 0) {
+        digits = '0'.repeat(-point) + digits;
+        point = 0;
+      }
+      if (point > digits.length) digits += '0'.repeat(point - digits.length);
+      return {
+        negative: match[1] === '-',
+        integer: digits.slice(0, point).replace(/^0+/, '') || '0',
+        fraction: digits.slice(point),
+      };
+    }
+
+    function isZeroAmount(amount) {
+      const value = parseDecimal(amount);
+      return value !== null && value.integer === '0' && /^0*$/.test(value.fraction);
     }
 
     /**
-     * Format a decimal balance string with the shipped account page's rules:
-     * two decimals rounded down, `<¥0.01` for sub-cent amounts, grouped digits.
-     * String arithmetic avoids floating-point rounding of the source amount.
+     * Format a balance with the shipped account page's rules: two decimals
+     * rounded down, `<¥0.01` below one cent, grouped digits.
      */
     function formatBalance(amount, symbol) {
-      const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(String(amount).trim());
-      if (!match) return symbol + '—';
-      const negative = match[1] === '-';
-      const integer = (match[2] || '0').replace(/^0+(?=\d)/, '');
-      const fraction = match[3] || '';
-      const cents = (fraction + '00').slice(0, 2);
-      const isZero = /^0*$/.test(integer) && /^0*$/.test(fraction);
-      if (isZero) return symbol + '0.00';
-      const belowCent = /^0*$/.test(integer) && cents === '00';
-      if (negative) return '-' + symbol + (belowCent ? '0.01' : addCommas(integer + '.' + cents));
+      const value = parseDecimal(amount);
+      if (value === null) return symbol + '—';
+      const integer = value.integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const cents = (value.fraction + '00').slice(0, 2);
+      if (value.integer === '0' && /^0*$/.test(value.fraction)) return symbol + '0.00';
+      const belowCent = value.integer === '0' && cents === '00';
+      if (value.negative) return '-' + symbol + (belowCent ? '0.01' : integer + '.' + cents);
       if (belowCent) return '<' + symbol + '0.01';
-      return symbol + addCommas(integer + '.' + cents);
+      return symbol + integer + '.' + cents;
     }
 
     function currencySymbol(currency) {
       return currency === 'CNY' ? '¥' : '$';
     }
 
-    /** Floating balance pill; all data arrives through props so the component stays side-effect free. */
-    function BalanceWidget({ account, locale, getBalance, translate }) {
-      const accountState = useSyncExternalStore(account.subscribe, account.getSnapshot);
-      useSyncExternalStore(locale.subscribe, locale.getSnapshot);
-      const t = translate;
-
-      const [result, setResult] = useState(null);
-      const [tick, setTick] = useState(0);
-      const [hidden, setHidden] = useState(false);
-      const signedIn = accountState.view?.status === 'credential-stored';
-
-      useEffect(() => {
-        if (!signedIn) return undefined;
-        const id = setInterval(() => setTick((n) => n + 1), REFRESH_MS);
-        const onFocus = () => setTick((n) => n + 1);
-        window.addEventListener('focus', onFocus);
-        return () => {
-          clearInterval(id);
-          window.removeEventListener('focus', onFocus);
-        };
-      }, [signedIn]);
-
-      useEffect(() => {
-        if (!signedIn) {
-          setResult(null);
-          return undefined;
-        }
-        let cancelled = false;
-        getBalance().then((next) => {
-          if (!cancelled) setResult(next);
-        });
-        return () => { cancelled = true; };
-      }, [signedIn, tick, getBalance]);
-
-      if (hidden || accountState.view === undefined) return null;
-
-      let text;
-      if (!signedIn) text = t('notSignedIn');
-      else if (result === null) text = t('loading');
-      else if (result.status !== 'ready') text = t('unavailable');
-      else {
-        const wallets = result.wallets.length > 0 ? result.wallets : [{ currency: 'CNY', balance: '0' }];
-        text = wallets.map((w) => formatBalance(w.balance, currencySymbol(w.currency))).join(' / ');
-        const bonus = result.bonusWallets.filter((w) => !/^-?0*(\.0*)?$/.test(String(w.balance)));
-        if (bonus.length > 0) {
-          text += ' + ' + bonus.map((w) => formatBalance(w.balance, currencySymbol(w.currency))).join(' / ');
-        }
-      }
-
-      return h('div', {
-        className: 'dsh-balance-display',
-        role: 'status',
-        'aria-live': 'polite',
-      },
-        h('button', {
-          type: 'button',
-          className: 'dsh-balance-display__main',
-          title: t('refresh'),
-          onClick: () => setTick((n) => n + 1),
-          disabled: !signedIn,
-        },
-          h('span', { className: 'dsh-balance-display__label' }, t('balance')),
-          h('span', { className: 'dsh-balance-display__value', 'data-muted': !signedIn || result?.status !== 'ready' ? '' : undefined }, text)
-        ),
-        h('button', {
-          type: 'button',
-          className: 'dsh-balance-display__close',
-          'aria-label': t('hide'),
-          title: t('hide'),
-          onClick: () => setHidden(true),
-        }, '×')
+    function WalletIcon() {
+      return h('svg', { viewBox: '0 0 16 16', width: 14, height: 14, fill: 'none', 'aria-hidden': true },
+        h('rect', { x: 1.75, y: 3.25, width: 12.5, height: 9.5, rx: 2, stroke: 'currentColor', strokeWidth: 1.3 }),
+        h('path', { d: 'M10 7.25h4.25v2.5H10a1.25 1.25 0 0 1 0-2.5Z', stroke: 'currentColor', strokeWidth: 1.3, strokeLinejoin: 'round' }),
+        h('path', { d: 'M3.5 3.25 10.5 1.5v1.75', stroke: 'currentColor', strokeWidth: 1.3, strokeLinejoin: 'round' })
       );
     }
 
+    /** Inline reading in the composer dock, styled like the shipped stats pills. */
+    function BalancePill({ store, refresh, translate }) {
+      const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+      const t = translate;
+      if (state.view === undefined) return null;
+      const signedIn = state.view.status === 'credential-stored';
+
+      let text;
+      if (!signedIn) text = t('notSignedIn');
+      else if (state.balance === null) text = t('loading');
+      else if (state.balance.status !== 'ready') text = t('unavailable');
+      else {
+        const wallets = state.balance.wallets.length > 0 ? state.balance.wallets : [{ currency: 'CNY', balance: '0' }];
+        text = wallets.map((w) => formatBalance(w.balance, currencySymbol(w.currency))).join(' / ');
+        const bonus = state.balance.bonusWallets.filter((w) => !isZeroAmount(w.balance));
+        if (bonus.length > 0) {
+          text += ' · ' + t('bonus') + ' ' + bonus.map((w) => formatBalance(w.balance, currencySymbol(w.currency))).join(' / ');
+        }
+      }
+
+      const label = h('span', { className: 'dshbal-label' }, text);
+      return h('span', { className: 'dshbal-anchor', 'data-composer-stat': 'balance' },
+        signedIn
+          ? h('button', {
+            type: 'button',
+            className: 'dshbal-pill',
+            title: t('balance') + ' ' + text + '\n' + t('refresh'),
+            'aria-label': t('balance') + ' ' + text,
+            'aria-busy': state.loading || undefined,
+            onClick: refresh,
+          }, h(WalletIcon), label)
+          : h('span', { className: 'dshbal-pill', title: t('balance') }, h(WalletIcon), label)
+      );
+    }
+
+    // Copied from the shipped stats pill styles, renamed under this plugin's prefix.
     const CSS = `
-.dsh-balance-display{position:fixed;right:16px;bottom:16px;z-index:20;display:flex;align-items:center;pointer-events:auto;
-  background:var(--dsw-alias-bg-base);border:.5px solid var(--dsw-alias-border-l3);border-radius:999px;
-  box-shadow:0 2px 8px rgba(0,0,0,.08);font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary);user-select:none}
-.dsh-balance-display button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
-.dsh-balance-display__main{display:flex;align-items:center;gap:6px;padding:5px 4px 5px 12px;border-radius:999px 0 0 999px}
-.dsh-balance-display__main:disabled{cursor:default}
-.dsh-balance-display__label{color:var(--dsw-alias-label-tertiary)}
-.dsh-balance-display__value{font-weight:500;font-variant-numeric:tabular-nums}
-.dsh-balance-display__value[data-muted]{color:var(--dsw-alias-label-tertiary);font-weight:400}
-.dsh-balance-display__close{padding:5px 10px 5px 4px;font-size:14px;line-height:18px;color:var(--dsw-alias-label-tertiary);border-radius:0 999px 999px 0}
-@media (hover:hover){.dsh-balance-display__main:not(:disabled):hover,.dsh-balance-display__close:hover{background:var(--dsw-alias-interactive-bg-hover)}}
-.dsh-balance-display button:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
+.dshbal-anchor{min-width:0;font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));display:inline-flex}
+.dshbal-pill{box-sizing:border-box;border-radius:var(--dsw-radius-sm);max-width:100%;color:var(--dsw-alias-label-tertiary);font:inherit;font-variant-numeric:tabular-nums;line-height:inherit;white-space:nowrap;background:0 0;border:none;align-items:center;gap:6px;padding:1px 8px;display:inline-flex}
+.dshbal-pill svg{flex:none;width:14px;height:14px}
+button.dshbal-pill{cursor:pointer}
+button.dshbal-pill[aria-busy=true]{opacity:.6}
+@media (hover:hover){button.dshbal-pill:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}}
+button.dshbal-pill:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
+.dshbal-label{text-overflow:ellipsis;min-width:0;overflow:hidden}
 `;
 
     return {
@@ -157,44 +140,66 @@ window.__ModuleLoader__.load({
           return () => style.remove();
         }, 'balance-display: styles');
 
+        // One shared store for every session's dock: account view plus the latest balance read.
         const listeners = new Set();
-        let snapshot = { view: undefined };
-        const publish = (next) => {
-          snapshot = next;
+        let snapshot = { view: undefined, balance: null, loading: false };
+        const publish = (patch) => {
+          snapshot = { ...snapshot, ...patch };
           for (const fn of listeners) fn();
         };
-        const account = {
+        const store = {
           getSnapshot: () => snapshot,
           subscribe: (fn) => {
             listeners.add(fn);
             return () => listeners.delete(fn);
           },
         };
-        const locale = {
-          getSnapshot: () => ctx.locale.getSnapshot(),
-          subscribe: (fn) => ctx.locale.subscribe(fn),
-        };
 
+        let generation = 0;
+        let pending;
         /** Read wallets through the same Remote method the account settings page uses. */
-        const getBalance = async () => {
-          try {
-            const meta = {
-              version: CLIENT_VERSION,
-              locale: ctx.locale.getSnapshot().active,
-              timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
-            };
-            const result = await ctx.remote.account.getBalance(meta);
-            if (!result.ok || result.value === null) return { status: 'failed' };
-            const balance = result.value;
-            if (balance.status !== 'ready') return { status: 'failed' };
-            return { status: 'ready', wallets: balance.value ?? [], bonusWallets: balance.bonusWallets ?? [] };
-          } catch (error) {
-            console.error('[balance-display] balance read failed', error);
-            return { status: 'failed' };
-          }
+        const refresh = () => {
+          if (snapshot.view?.status !== 'credential-stored') return Promise.resolve();
+          if (pending !== undefined) return pending;
+          const current = generation;
+          publish({ loading: true });
+          pending = (async () => {
+            let balance;
+            try {
+              const result = await ctx.remote.account.getBalance({
+                version: CLIENT_VERSION,
+                locale: ctx.locale.getSnapshot().active,
+                timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
+              });
+              const value = result.ok ? result.value : null;
+              balance = value?.status === 'ready'
+                ? { status: 'ready', wallets: value.value ?? [], bonusWallets: value.bonusWallets ?? [] }
+                : { status: 'failed' };
+              if (balance.status === 'ready') {
+                for (const w of [...balance.wallets, ...balance.bonusWallets]) {
+                  if (parseDecimal(w.balance) === null) console.warn('[balance-display] unrecognized balance value', w);
+                }
+              }
+            } catch (error) {
+              console.error('[balance-display] balance read failed', error);
+              balance = { status: 'failed' };
+            }
+            if (current === generation) publish({ balance, loading: false });
+          })().finally(() => { pending = undefined; });
+          return pending;
         };
 
-        // Track sign-in state; the widget only exists while the account feature is reachable.
+        ctx.effect(() => {
+          const id = setInterval(() => { refresh(); }, REFRESH_MS);
+          const onFocus = () => { refresh(); };
+          window.addEventListener('focus', onFocus);
+          return () => {
+            clearInterval(id);
+            window.removeEventListener('focus', onFocus);
+          };
+        }, 'balance-display: refresh timer');
+
+        // Track sign-in state; the pill only exists while the account feature is reachable.
         ctx.remoteAccess.whenAccess('account/watch', function* () {
           const stream = ctx.remote.$stream({
             name: 'balance-display.account',
@@ -204,27 +209,32 @@ window.__ModuleLoader__.load({
           let ended = false;
           yield () => {
             ended = true;
-            publish({ view: undefined });
+            generation++;
+            publish({ view: undefined, balance: null, loading: false });
             return stream.dispose();
           };
           (async () => {
             for await (const frame of stream) {
               if (ended) return;
-              publish({ view: frame.value });
+              generation++;
+              pending = undefined;
+              publish({ view: frame.value, balance: null, loading: false });
               frame.accept();
+              refresh();
             }
           })().catch((error) => {
             if (!ended) console.error('[balance-display] account stream failed', error);
           });
         });
 
-        const props = { account, locale, getBalance, translate };
-        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-          name: 'shell.overlay',
-          id: 'balance-display',
+        const props = { store, refresh: () => { refresh(); }, translate };
+        ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+          name: 'conversation.composer.dock',
+          id: 'balance',
+          order: 2,
           label: () => translate('balance'),
-        }, function BalanceDisplayEntry() {
-          return h(BalanceWidget, props);
+        }, function BalanceDockEntry() {
+          return h(BalancePill, props);
         }));
       },
     };

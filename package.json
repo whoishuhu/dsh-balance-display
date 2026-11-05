@@ -1,7 +1,7 @@
 {
   "name": "@local/dsh-balance-display",
   "version": "1.0.0",
-  "description": "Display account balance in the bottom-right corner of DeepSeek Harness",
+  "description": "Show the DeepSeek account balance in the DeepSeek Harness composer stats row",
   "private": true,
   "type": "module",
   "exports": {

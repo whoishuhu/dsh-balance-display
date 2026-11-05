@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "余额显示",
-    "description": "在主界面右下角显示账户余额信息"
+    "description": "在输入框下方的统计信息行显示账户余额"
   },
   "balance": "余额",
   "loading": "加载中...",

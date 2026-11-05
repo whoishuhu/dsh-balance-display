@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Balance display",
-    "description": "Display account balance in the bottom-right corner of the main interface"
+    "description": "Show the account balance in the stats row under the composer"
   },
   "balance": "Balance",
   "loading": "Loading...",
