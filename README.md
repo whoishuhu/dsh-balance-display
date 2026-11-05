@@ -1,4 +1,4 @@
-# DSH balance display
+﻿# DSH balance display
 
 A DeepSeek Harness plugin that shows your DeepSeek account balance (the same figures as Settings → Account) inline in the stats row under the message composer, next to the token and cache readings.
 
@@ -20,7 +20,7 @@ A DeepSeek Harness plugin that shows your DeepSeek account balance (the same fig
 1. 克隆仓库：
 
    ```bash
-   git clone https://github.com/<owner>/dsh-balance-display.git
+   git clone https://github.com/whoishuhu/dsh-balance-display.git
    ```
 
 2. 在 DeepSeek Harness 的对话中让 Agent 安装这个本地目录，例如：
